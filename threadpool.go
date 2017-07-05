@@ -26,7 +26,7 @@ import "sync"
 type ThreadPool struct {
   threads  int
   bufsize  int
-  channel  chan func(int, error) error
+  channel  chan func(int, func() error) error
   errmtx  *sync.RWMutex
   errmsg   error
   wg       sync.WaitGroup
@@ -42,7 +42,7 @@ func NewThreadPool(threads, bufsize int) *ThreadPool {
   return &t
 }
 
-func (t *ThreadPool) AddTask(task func(i int, err error) error) {
+func (t *ThreadPool) AddTask(task func(i int, erf func() error) error) {
   t.channel <- task
 }
 
@@ -67,14 +67,14 @@ func (t *ThreadPool) getError() error {
 }
 
 func (t *ThreadPool) Launch() {
-  t.channel = make(chan func(int, error) error, t.bufsize)
+  t.channel = make(chan func(int, func() error) error, t.bufsize)
   t.errmsg  = nil
   t.wg.Add(t.threads)
   for i := 0; i < t.threads; i++ {
     go func(i int) {
       defer t.wg.Done()
       for task := range t.channel {
-        if err := task(i, t.getError()); err != nil {
+        if err := task(i, t.getError); err != nil {
           t.setError(err)
         }
       }

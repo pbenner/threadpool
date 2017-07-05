@@ -32,9 +32,9 @@ func TestTest1(t *testing.T) {
 
   // add jobs
   for i := 0; i < 100; i++ {
-    p.AddTask(func(i int, err error) error {
+    p.AddTask(func(i int, erf func() error) error {
       // do nothing if there was an error
-      if err != nil {
+      if erf() != nil {
         return nil
       }
       // count the number of jobs this thread
