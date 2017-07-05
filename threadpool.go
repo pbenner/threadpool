@@ -14,47 +14,72 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-package utility
+package threadpool
 
 /* -------------------------------------------------------------------------- */
 
+//import "fmt"
 import "sync"
 
 /* -------------------------------------------------------------------------- */
 
 type ThreadPool struct {
-  threads int
-  bufsize int
-  channel chan func(int)
-  wg      sync.WaitGroup
+  threads  int
+  bufsize  int
+  channel  chan func(int, func() error) error
+  errmtx  *sync.RWMutex
+  errmsg   error
+  wg       sync.WaitGroup
 }
 
 func NewThreadPool(threads, bufsize int) *ThreadPool {
   t := ThreadPool{}
   t.threads = threads
   t.bufsize = bufsize
+  t.errmtx  = new(sync.RWMutex)
+  t.errmsg  = nil
   t.Launch()
   return &t
 }
 
-func (t *ThreadPool) AddTask(task func(i int)) {
+func (t *ThreadPool) AddTask(task func(i int, erf func() error) error) {
   t.channel <- task
 }
 
-func (t *ThreadPool) Wait() {
+func (t *ThreadPool) Wait() error {
   close(t.channel)
   t.wg.Wait()
+  err := t.errmsg
   t.Launch()
+  return err
+}
+
+func (t *ThreadPool) setError(err error) {
+  t.errmtx.Lock()
+  t.errmsg = err
+  t.errmtx.Unlock()
+}
+
+func (t *ThreadPool) getError() error {
+  t.errmtx.RLock()
+  defer t.errmtx.RUnlock()
+  return t.errmsg
 }
 
 func (t *ThreadPool) Launch() {
-  t.channel = make(chan func(int), t.bufsize)
+  t.channel = make(chan func(int, func() error) error, t.bufsize)
+  t.errmsg  = nil
   t.wg.Add(t.threads)
   for i := 0; i < t.threads; i++ {
     go func(i int) {
       defer t.wg.Done()
       for task := range t.channel {
-        task(i)
+        if t.getError() != nil {
+          continue
+        }
+        if err := task(i, t.getError); err != nil {
+          t.setError(err)
+        }
       }
     }(i)
   }
