@@ -46,6 +46,25 @@ func (t *ThreadPool) AddTask(task func(i int, erf func() error) error) {
   t.channel <- task
 }
 
+func (t *ThreadPool) AddRangeTask(iFrom, iTo int, task func(i int, erf func() error) error) {
+  n := (iTo-iFrom)/t.NumberOfThreads()
+  for j := iFrom; j < iTo; j += n {
+    iFrom_ := j
+    iTo_   := j+n
+    if iTo_ > iTo {
+      iTo_ = iTo
+    }
+    t.channel <- func(i int, erf func() error) error {
+      for k := iFrom_; k < iTo_; k++ {
+        if err := task(i, erf); err != nil {
+          return err
+        }
+      }
+      return nil
+    }
+  }
+}
+
 func (t *ThreadPool) Wait() error {
   close(t.channel)
   t.wg.Wait()
