@@ -55,8 +55,8 @@ func (t *ThreadPool) AddRangeTask(iFrom, iTo int, task func(i, threadIdx int, er
       iTo_ = iTo
     }
     t.channel <- func(threadIdx int, erf func() error) error {
-      for k := iFrom_; k < iTo_; k++ {
-        if err := task(k, threadIdx, erf); err != nil {
+      for i := iFrom_; i < iTo_; i++ {
+        if err := task(i, threadIdx, erf); err != nil {
           return err
         }
       }
