@@ -43,7 +43,13 @@ func NewThreadPool(threads, bufsize int) *ThreadPool {
 }
 
 func (t *ThreadPool) AddTask(task func(threadIdx int, erf func() error) error) {
-  t.channel <- task
+  if t.NumberOfThreads() == 0 {
+    if err := task(0, t.getError); err != nil {
+      t.setError(err)
+    }
+  } else {
+    t.channel <- task
+  }
 }
 
 func (t *ThreadPool) AddRangeTask(iFrom, iTo int, task func(i, threadIdx int, erf func() error) error) {
