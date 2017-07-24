@@ -32,17 +32,17 @@ func TestTest1(t *testing.T) {
 
   // add jobs
   for i := 0; i < 100; i++ {
-    p.AddTask(func(i int, erf func() error) error {
+    p.AddTask(func(threadIdx int, erf func() error) error {
       // do nothing if there was an error
       if erf() != nil {
         return nil
       }
       // count the number of jobs this thread
       // finished
-      if r[i] > 3 {
+      if r[threadIdx] > 3 {
         return fmt.Errorf("error in thread %d", i)
       }
-      r[i]++
+      r[threadIdx]++
       return nil
     })
   }
@@ -58,17 +58,17 @@ func TestTest2(t *testing.T) {
   r := make([]int, n)
 
   // add jobs
-  p.AddRangeTask(0, 100, func(i int, erf func() error) error {
+  p.AddRangeTask(0, 100, func(i, threadIdx int, erf func() error) error {
     // do nothing if there was an error
     if erf() != nil {
       return nil
     }
     // count the number of jobs this thread
     // finished
-    if r[i] > 3 {
+    if r[threadIdx] > 3 {
       return fmt.Errorf("error in thread %d", i)
     }
-    r[i]++
+    r[threadIdx]++
     return nil
   })
   if err := p.Wait(); err == nil {

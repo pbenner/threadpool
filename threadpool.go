@@ -42,11 +42,11 @@ func NewThreadPool(threads, bufsize int) *ThreadPool {
   return &t
 }
 
-func (t *ThreadPool) AddTask(task func(i int, erf func() error) error) {
+func (t *ThreadPool) AddTask(task func(threadIdx int, erf func() error) error) {
   t.channel <- task
 }
 
-func (t *ThreadPool) AddRangeTask(iFrom, iTo int, task func(i int, erf func() error) error) {
+func (t *ThreadPool) AddRangeTask(iFrom, iTo int, task func(i, threadIdx int, erf func() error) error) {
   n := (iTo-iFrom)/t.NumberOfThreads()
   for j := iFrom; j < iTo; j += n {
     iFrom_ := j
@@ -54,9 +54,9 @@ func (t *ThreadPool) AddRangeTask(iFrom, iTo int, task func(i int, erf func() er
     if iTo_ > iTo {
       iTo_ = iTo
     }
-    t.channel <- func(i int, erf func() error) error {
+    t.channel <- func(threadIdx int, erf func() error) error {
       for k := iFrom_; k < iTo_; k++ {
-        if err := task(i, erf); err != nil {
+        if err := task(k, threadIdx, erf); err != nil {
           return err
         }
       }
