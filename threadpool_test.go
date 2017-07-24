@@ -75,3 +75,28 @@ func TestTest2(t *testing.T) {
     t.Error("test failed")
   }
 }
+
+func TestTest3(t *testing.T) {
+
+  n := 1
+  p := NewThreadPool(n, 100)
+  r := make([]int, n)
+
+  // add jobs
+  p.AddRangeTask(0, 100, func(i, threadIdx int, erf func() error) error {
+    // do nothing if there was an error
+    if erf() != nil {
+      return nil
+    }
+    // count the number of jobs this thread
+    // finished
+    if r[threadIdx] > 3 {
+      return fmt.Errorf("error in thread %d", i)
+    }
+    r[threadIdx]++
+    return nil
+  })
+  if err := p.Wait(); err == nil {
+    t.Error("test failed")
+  }
+}

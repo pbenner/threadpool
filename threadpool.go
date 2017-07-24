@@ -33,6 +33,12 @@ type ThreadPool struct {
 }
 
 func NewThreadPool(threads, bufsize int) *ThreadPool {
+  if threads < 1 {
+    panic("invalid number of threads")
+  }
+  if bufsize < 1 {
+    panic("invalid bufsize")
+  }
   t := ThreadPool{}
   t.threads = threads
   t.bufsize = bufsize
@@ -43,7 +49,7 @@ func NewThreadPool(threads, bufsize int) *ThreadPool {
 }
 
 func (t *ThreadPool) AddTask(task func(threadIdx int, erf func() error) error) {
-  if t.NumberOfThreads() == 0 {
+  if t.NumberOfThreads() == 1 {
     if err := task(0, t.getError); err != nil {
       t.setError(err)
     }
@@ -60,20 +66,22 @@ func (t *ThreadPool) AddRangeTask(iFrom, iTo int, task func(i, threadIdx int, er
     if iTo_ > iTo {
       iTo_ = iTo
     }
-    t.channel <- func(threadIdx int, erf func() error) error {
+    t.AddTask(func(threadIdx int, erf func() error) error {
       for i := iFrom_; i < iTo_; i++ {
         if err := task(i, threadIdx, erf); err != nil {
           return err
         }
       }
       return nil
-    }
+    })
   }
 }
 
 func (t *ThreadPool) Wait() error {
-  close(t.channel)
-  t.wg.Wait()
+  if t.NumberOfThreads() > 1 {
+    close(t.channel)
+    t.wg.Wait()
+  }
   err := t.errmsg
   t.Launch()
   return err
@@ -92,6 +100,14 @@ func (t *ThreadPool) getError() error {
 }
 
 func (t *ThreadPool) Launch() {
+  n := t.NumberOfThreads()
+  // if only one thread is requested, use the calling thread as
+  // the only working thread, i.e. do not launch additional
+  // threads
+  if n == 1 {
+    t.errmsg = nil
+    return
+  }
   t.channel = make(chan func(int, func() error) error, t.bufsize)
   t.errmsg  = nil
   t.wg.Add(t.threads)
