@@ -49,13 +49,7 @@ func NewThreadPool(threads, bufsize int) *ThreadPool {
 }
 
 func (t *ThreadPool) AddTask(task func(threadIdx int, erf func() error) error) {
-  if t.NumberOfThreads() == 1 {
-    if err := task(0, t.getError); err != nil {
-      t.setError(err)
-    }
-  } else {
-    t.channel <- task
-  }
+  t.channel <- task
 }
 
 func (t *ThreadPool) AddRangeTask(iFrom, iTo int, task func(i, threadIdx int, erf func() error) error) {
@@ -78,6 +72,17 @@ func (t *ThreadPool) AddRangeTask(iFrom, iTo int, task func(i, threadIdx int, er
 }
 
 func (t *ThreadPool) Wait() error {
+LOOP:
+  for {
+    select {
+    case task := <-t.channel :
+      if err := task(0, t.getError); err != nil {
+        t.setError(err)
+      }
+    default:
+      break LOOP
+    }
+  }
   if t.NumberOfThreads() > 1 {
     close(t.channel)
     t.wg.Wait()
@@ -101,17 +106,12 @@ func (t *ThreadPool) getError() error {
 
 func (t *ThreadPool) Launch() {
   n := t.NumberOfThreads()
-  // if only one thread is requested, use the calling thread as
-  // the only working thread, i.e. do not launch additional
-  // threads
-  if n == 1 {
-    t.errmsg = nil
-    return
-  }
   t.channel = make(chan func(int, func() error) error, t.bufsize)
   t.errmsg  = nil
-  t.wg.Add(t.threads)
-  for i := 0; i < t.threads; i++ {
+  if n > 1 {
+    t.wg.Add(n-1)
+  }
+  for i := 1; i < n; i++ {
     go func(i int) {
       defer t.wg.Done()
       for task := range t.channel {
