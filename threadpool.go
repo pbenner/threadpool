@@ -83,10 +83,9 @@ LOOP:
       break LOOP
     }
   }
-  if t.NumberOfThreads() > 1 {
-    close(t.channel)
-    t.wg.Wait()
-  }
+  close(t.channel)
+  t.wg.Done()
+  t.wg.Wait()
   err := t.errmsg
   t.Launch()
   return err
@@ -108,9 +107,7 @@ func (t *ThreadPool) Launch() {
   n := t.NumberOfThreads()
   t.channel = make(chan func(int, func() error) error, t.bufsize)
   t.errmsg  = nil
-  if n > 1 {
-    t.wg.Add(n-1)
-  }
+  t.wg.Add(n)
   for i := 1; i < n; i++ {
     go func(i int) {
       defer t.wg.Done()
