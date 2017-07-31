@@ -42,6 +42,7 @@ func NewThreadPool(threads, bufsize int) *ThreadPool {
   t := ThreadPool{}
   t.threads = threads
   t.bufsize = bufsize
+  t.channel = make(chan func(int, func() error) error, t.bufsize)
   t.errmtx  = new(sync.RWMutex)
   t.errmsg  = nil
   t.Launch()
@@ -73,6 +74,8 @@ func (t *ThreadPool) AddRangeTask(iFrom, iTo int, task func(i, threadIdx int, er
 
 func (t *ThreadPool) Wait() error {
 LOOP:
+  // main thread now acting as a worker before
+  // waiting until all other threads are done
   for {
     select {
     case task := <-t.channel :
@@ -83,8 +86,10 @@ LOOP:
       break LOOP
     }
   }
-  close(t.channel)
-  t.wg.Done()
+  // kill threads
+  for i := 1; i < t.NumberOfThreads(); i++ {
+    t.AddTask(nil)
+  }
   t.wg.Wait()
   err := t.errmsg
   t.Launch()
@@ -105,17 +110,19 @@ func (t *ThreadPool) getError() error {
 
 func (t *ThreadPool) Launch() {
   n := t.NumberOfThreads()
-  t.channel = make(chan func(int, func() error) error, t.bufsize)
   t.errmsg  = nil
-  t.wg.Add(n)
+  t.wg.Add(n-1)
   for i := 1; i < n; i++ {
     go func(i int) {
-      defer t.wg.Done()
       for task := range t.channel {
+        if task == nil {
+          break
+        }
         if err := task(i, t.getError); err != nil {
           t.setError(err)
         }
       }
+      t.wg.Done()
     }(i)
   }
 }
