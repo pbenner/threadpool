@@ -73,9 +73,9 @@ func (t *ThreadPool) AddRangeTask(iFrom, iTo int, task func(i, threadIdx int, er
 }
 
 func (t *ThreadPool) Wait() error {
-LOOP:
   // main thread now acting as a worker before
   // waiting until all other threads are done
+LOOP:
   for {
     select {
     case task := <-t.channel :
