@@ -6,11 +6,19 @@ Go / Golang thread-pool library that supports nested job queuing.
 
 ### Example 1: Simple job queuing
 ```go
+  // create a new thread pool with 5 working threads and
+  // a queue buffer of 100 (in addition to this thread, 4
+  // additional threads will be launched that start reading
+  // from the job queue)
   pool := NewThreadPool(5, 100)
 
+  // tasks are always grouped, get a new group index
   g := pool.NewTaskGroup()
+  // slice carrying the results
   r := make([]int, 20)
 
+  // add tasks to the thread pool, where the i'th task sets
+  // r[i] to the thread index
   for i_, _ := range r {
     i := i_
     pool.AddTask(g, func(threadIdx int, erf func() error) error {
@@ -19,6 +27,8 @@ Go / Golang thread-pool library that supports nested job queuing.
       return nil
     })
   }
+  // wait until all tasks in group g are done, meanwhile, this thread
+  // is also used as a worker
   pool.Wait(g)
   fmt.Println("result:", r)
 ```
@@ -30,6 +40,9 @@ Go / Golang thread-pool library that supports nested job queuing.
   g := pool.NewTaskGroup()
   r := make([]int, 20)
 
+  // instead of creating len(r) tasks, this method splits
+  // r into #threads pieces and adds one task for each piece
+  // to increase efficiency
   pool.AddRangeTask(0, len(r), g, func(i, threadIdx int, erf func() error) error {
     time.Sleep(10 * time.Millisecond)
     r[i] = threadIdx+1
@@ -48,10 +61,12 @@ Go / Golang thread-pool library that supports nested job queuing.
 
   pool.AddRangeTask(0, len(r), g, func(i, threadIdx int, erf func() error) error {
     time.Sleep(10 * time.Millisecond)
+    // stop if there was an error in one of the
+    // previous tasks
     if erf() != nil {
-      // stop if there was an error
       return nil
     }
+    // return an error at position 2
     if i == 2 {
       r[i] = -1
       return fmt.Errorf("error in thread %d", threadIdx)
@@ -76,6 +91,8 @@ Go / Golang thread-pool library that supports nested job queuing.
   pool.AddRangeTask(0, len(r), g0, func(i, threadIdx int, erf func() error) error {
     r[i] = make([]int, 5)
 
+    // get a new task group for filling the i'th sub-slice, which allows
+    // us to wait until the sub-slice is filled
     gi := pool.NewTaskGroup()
 
     for j_, _ := range r[i] {
