@@ -8,7 +8,7 @@ Go / Golang thread-pool library that supports nested job queuing.
 ```go
   // create a new thread pool with 5 working threads and
   // a queue buffer of 100 (in addition to this thread, 4
-  // additional threads will be launched that start reading
+  // more threads will be launched that start reading
   // from the job queue)
   pool := NewThreadPool(5, 100)
 
