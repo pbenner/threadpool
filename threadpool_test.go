@@ -33,7 +33,7 @@ func TestTest1(t *testing.T) {
   // add jobs
   for i_ := 0; i_ < 100; i_++ {
     i := i_
-    p.AddTask(0, func(threadIdx int, erf func() error) error {
+    p.AddJob(0, func(threadIdx int, erf func() error) error {
       // do nothing if there was an error
       if erf() != nil {
         return nil
@@ -41,7 +41,7 @@ func TestTest1(t *testing.T) {
       // count the number of jobs this thread
       // finished
       if r[threadIdx] > 3 {
-        return fmt.Errorf("error in task %d", i)
+        return fmt.Errorf("error in job %d", i)
       }
       r[threadIdx]++
       return nil
@@ -58,10 +58,10 @@ func TestTest2(t *testing.T) {
   p := NewThreadPool(n, 100)
   r := make([]int, n)
 
-  taskGroup := 0
+  jobGroup := 0
 
   // add jobs
-  p.AddRangeTask(0, 100, taskGroup, func(i, threadIdx int, erf func() error) error {
+  p.AddRangeJob(0, 100, jobGroup, func(i, threadIdx int, erf func() error) error {
     // do nothing if there was an error
     if erf() != nil {
       return nil
@@ -74,7 +74,7 @@ func TestTest2(t *testing.T) {
     r[threadIdx]++
     return nil
   })
-  if err := p.Wait(taskGroup); err == nil {
+  if err := p.Wait(jobGroup); err == nil {
     t.Error("test failed:", err)
   }
 }
@@ -86,7 +86,7 @@ func TestTest3(t *testing.T) {
   r := make([]int, n)
 
   // add jobs
-  p.AddRangeTask(0, 100, 0, func(i, threadIdx int, erf func() error) error {
+  p.AddRangeJob(0, 100, 0, func(i, threadIdx int, erf func() error) error {
     // do nothing if there was an error
     if erf() != nil {
       return nil
@@ -114,9 +114,9 @@ func TestTest4(t *testing.T) {
   // add jobs
   for i_ := 0; i_ < m; i_++ {
     i := i_
-    p.AddTask(0, func(threadIdx int, erf func() error) error {
+    p.AddJob(0, func(threadIdx int, erf func() error) error {
       for j := 0; j < m; j++ {
-        p.AddTask(i+1, func(threadIdx int, erf func() error) error {
+        p.AddJob(i+1, func(threadIdx int, erf func() error) error {
           r[i]++
           return nil
         })
@@ -142,9 +142,9 @@ func TestTest5(t *testing.T) {
   // add jobs
   for i_ := 0; i_ < m; i_++ {
     i := i_
-    p.AddTask(0, func(threadIdx int, erf func() error) error {
+    p.AddJob(0, func(threadIdx int, erf func() error) error {
       for j := 0; j < m; j++ {
-        p.AddTask(i+1, func(threadIdx int, erf func() error) error {
+        p.AddJob(i+1, func(threadIdx int, erf func() error) error {
           r[i]++
           return nil
         })
@@ -162,17 +162,17 @@ func TestTest5(t *testing.T) {
 
 /* -------------------------------------------------------------------------- */
 
-// Demonstrate AddTask
+// Demonstrate AddJob
 func TestExample1(t *testing.T) {
 
   pool := NewThreadPool(5, 100)
 
-  g := pool.NewTaskGroup()
+  g := pool.NewJobGroup()
   r := make([]int, 20)
 
   for i_, _ := range r {
     i := i_
-    pool.AddTask(g, func(threadIdx int, erf func() error) error {
+    pool.AddJob(g, func(threadIdx int, erf func() error) error {
       time.Sleep(10 * time.Millisecond)
       r[i] = threadIdx+1
       return nil
@@ -182,15 +182,15 @@ func TestExample1(t *testing.T) {
   fmt.Println("result:", r)
 }
 
-// Demonstrate AddRangeTask
+// Demonstrate AddRangeJob
 func TestExample2(t *testing.T) {
 
   pool := NewThreadPool(5, 100)
 
-  g := pool.NewTaskGroup()
+  g := pool.NewJobGroup()
   r := make([]int, 20)
 
-  pool.AddRangeTask(0, len(r), g, func(i, threadIdx int, erf func() error) error {
+  pool.AddRangeJob(0, len(r), g, func(i, threadIdx int, erf func() error) error {
     time.Sleep(10 * time.Millisecond)
     r[i] = threadIdx+1
     return nil
@@ -204,10 +204,10 @@ func TestExample3(t *testing.T) {
 
   pool := NewThreadPool(5, 100)
 
-  g := pool.NewTaskGroup()
+  g := pool.NewJobGroup()
   r := make([]int, 20)
 
-  pool.AddRangeTask(0, len(r), g, func(i, threadIdx int, erf func() error) error {
+  pool.AddRangeJob(0, len(r), g, func(i, threadIdx int, erf func() error) error {
     time.Sleep(10 * time.Millisecond)
     if erf() != nil {
       // stop if there was an error
@@ -227,22 +227,22 @@ func TestExample3(t *testing.T) {
   fmt.Println("result:", r)
 }
 
-// Demonstrate nested task scheduling
+// Demonstrate nested job scheduling
 func TestExample4(t *testing.T) {
 
   pool := NewThreadPool(5, 100)
 
-  g0 := pool.NewTaskGroup()
+  g0 := pool.NewJobGroup()
   r  := make([][]int, 5)
 
-  pool.AddRangeTask(0, len(r), g0, func(i, threadIdx int, erf func() error) error {
+  pool.AddRangeJob(0, len(r), g0, func(i, threadIdx int, erf func() error) error {
     r[i] = make([]int, 5)
 
-    gi := pool.NewTaskGroup()
+    gi := pool.NewJobGroup()
 
     for j_, _ := range r[i] {
       j := j_
-      pool.AddTask(gi, func(threadIdx int, erf func() error) error {
+      pool.AddJob(gi, func(threadIdx int, erf func() error) error {
         time.Sleep(10 * time.Millisecond)
         r[i][j] = threadIdx+1
         return nil
