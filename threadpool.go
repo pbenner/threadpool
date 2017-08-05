@@ -28,13 +28,6 @@ type task struct {
   taskGroup int
 }
 
-type threadStop struct {
-}
-
-func (obj threadStop) Error() string {
-  return ""
-}
-
 /* -------------------------------------------------------------------------- */
 
 type waitGroup struct {
@@ -99,7 +92,6 @@ func NewThreadPool(threads, bufsize int) *ThreadPool {
   t := ThreadPool{}
   t.threads  = threads
   t.bufsize  = bufsize
-  t.channel  = make(chan task, bufsize)
   t.cntmtx   = new(sync.RWMutex)
   t.cnt      = 0
   t.wgmmtx   = new(sync.RWMutex)
@@ -107,7 +99,7 @@ func NewThreadPool(threads, bufsize int) *ThreadPool {
   t.errmtx   = new(sync.RWMutex)
   t.err      = make(map[int]error)
   // create threads
-  t.launch()
+  t.Start()
   return &t
 }
 
@@ -182,12 +174,7 @@ func (t *ThreadPool) Wait(taskGroup int) error {
           return t.getError(task.taskGroup)
         }
         if err := task.f(0, getError); err != nil {
-          switch err.(type) {
-          case threadStop:
-            panic("main thread received threadStop message")
-          default:
-            t.setError(task.taskGroup, err)
-          }
+          t.setError(task.taskGroup, err)
         }
       default:
         // task channel is empty, wait for all tasks
@@ -203,12 +190,20 @@ func (t *ThreadPool) Wait(taskGroup int) error {
   }
 }
 
-func (t *ThreadPool) Stop() {
-  for i := 1; i < t.NumberOfThreads(); i++ {
-    t.AddTask(-1, func(threadIdx int, erf func() error) error {
-      return threadStop{}
-    })
+func (t *ThreadPool) Start() {
+  t.channel = make(chan task, t.bufsize)
+  for i := 1; i < t.threads; i++ {
+    go func(i int) {
+      for {
+        // start computing tasks
+        t.worker(i)
+      }
+    }(i)
   }
+}
+
+func (t *ThreadPool) Stop() {
+  close(t.channel)
 }
 
 /* -------------------------------------------------------------------------- */
@@ -261,23 +256,7 @@ func (t *ThreadPool) worker(i int) {
       return t.getError(task.taskGroup)
     }
     if err := task.f(i, getError); err != nil {
-      switch err.(type) {
-      case threadStop:
-        return
-      default:
-        t.setError(task.taskGroup, err)
-      }
+      t.setError(task.taskGroup, err)
     }
-  }
-}
-
-func (t *ThreadPool) launch() {
-  for i := 1; i < t.threads; i++ {
-    go func(i int) {
-      for {
-        // start computing tasks
-        t.worker(i)
-      }
-    }(i)
   }
 }
