@@ -18,18 +18,75 @@ package threadpool
 
 /* -------------------------------------------------------------------------- */
 
-//import "fmt"
+import "fmt"
 import "sync"
+
+/* -------------------------------------------------------------------------- */
+
+type task struct {
+  f func(int, func() error) error
+  taskGroup int
+}
+
+type threadStop struct {
+}
+
+func (obj threadStop) Error() string {
+  return ""
+}
+
+/* -------------------------------------------------------------------------- */
+
+type waitGroup struct {
+  wg    *sync.WaitGroup
+  mutex *sync.RWMutex
+  cnt    int
+}
+
+func newWaitGroup() *waitGroup {
+  r := waitGroup{}
+  r.wg    = new(sync.WaitGroup)
+  r.mutex = new(sync.RWMutex)
+  r.cnt   = 0
+  return &r
+}
+
+func (obj *waitGroup) Value() int {
+  obj.mutex.RLock()
+  defer obj.mutex.RUnlock()
+  return obj.cnt
+}
+
+func (obj *waitGroup) Add(i int) {
+  obj.mutex.Lock()
+  obj.cnt += i
+  obj.wg.Add(i)
+  obj.mutex.Unlock()
+}
+
+func (obj *waitGroup) Done() {
+  obj.mutex.Lock()
+  obj.cnt -= 1
+  obj.wg.Done()
+  obj.mutex.Unlock()
+}
+
+func (obj *waitGroup) Wait() {
+  obj.wg.Wait()
+}
 
 /* -------------------------------------------------------------------------- */
 
 type ThreadPool struct {
   threads  int
   bufsize  int
-  channel  chan func(int, func() error) error
+  channel  chan task
+  cntmtx  *sync.RWMutex
+  cnt      int
+  wgmmtx  *sync.RWMutex
+  wgm      map[int]*waitGroup
   errmtx  *sync.RWMutex
-  errmsg   error
-  wg       sync.WaitGroup
+  err      map[int]error
 }
 
 func NewThreadPool(threads, bufsize int) *ThreadPool {
@@ -40,20 +97,51 @@ func NewThreadPool(threads, bufsize int) *ThreadPool {
     panic("invalid bufsize")
   }
   t := ThreadPool{}
-  t.threads = threads
-  t.bufsize = bufsize
-  t.channel = make(chan func(int, func() error) error, t.bufsize)
-  t.errmtx  = new(sync.RWMutex)
-  t.errmsg  = nil
-  t.Launch()
+  t.threads  = threads
+  t.bufsize  = bufsize
+  t.channel  = make(chan task, bufsize)
+  t.cntmtx   = new(sync.RWMutex)
+  t.cnt      = 0
+  t.wgmmtx   = new(sync.RWMutex)
+  t.wgm      = make(map[int]*waitGroup)
+  t.errmtx   = new(sync.RWMutex)
+  t.err      = make(map[int]error)
+  // create threads
+  t.launch()
   return &t
 }
 
-func (t *ThreadPool) AddTask(task func(threadIdx int, erf func() error) error) {
-  t.channel <- task
+/* -------------------------------------------------------------------------- */
+
+func (t *ThreadPool) NewTaskGroup() int {
+  t.cntmtx.Lock()
+  defer t.cntmtx.Unlock()
+  for {
+    // increment counter until no wait group is
+    // found
+    i := t.cnt; t.cnt += 1
+    if _, ok := t.wgm[i]; !ok {
+      return i
+    }
+  }
 }
 
-func (t *ThreadPool) AddRangeTask(iFrom, iTo int, task func(i, threadIdx int, erf func() error) error) {
+func (t *ThreadPool) NumberOfThreads() int {
+  return t.threads
+}
+
+func (t *ThreadPool) AddTask(taskGroup int, f func(threadIdx int, erf func() error) error) {
+  wg := t.getWaitGroup(taskGroup)
+  wg.Add(1)
+
+  g := func(threadIdx int, erf func() error) error {
+    defer wg.Done()
+    return f(threadIdx, erf)
+  }
+  t.channel <- task{g, taskGroup}
+}
+
+func (t *ThreadPool) AddRangeTask(iFrom, iTo int, taskGroup int, f func(i, threadIdx int, erf func() error) error) {
   n := (iTo-iFrom)/t.NumberOfThreads()
   for j := iFrom; j < iTo; j += n {
     iFrom_ := j
@@ -61,9 +149,9 @@ func (t *ThreadPool) AddRangeTask(iFrom, iTo int, task func(i, threadIdx int, er
     if iTo_ > iTo {
       iTo_ = iTo
     }
-    t.AddTask(func(threadIdx int, erf func() error) error {
+    t.AddTask(taskGroup, func(threadIdx int, erf func() error) error {
       for i := iFrom_; i < iTo_; i++ {
-        if err := task(i, threadIdx, erf); err != nil {
+        if err := f(i, threadIdx, erf); err != nil {
           return err
         }
       }
@@ -72,61 +160,121 @@ func (t *ThreadPool) AddRangeTask(iFrom, iTo int, task func(i, threadIdx int, er
   }
 }
 
-func (t *ThreadPool) Wait() error {
-  // main thread now acting as a worker before
-  // waiting until all other threads are done
-LOOP:
-  for {
-    select {
-    case task := <-t.channel :
-      if err := task(0, t.getError); err != nil {
-        t.setError(err)
+func (t *ThreadPool) Wait(taskGroup int) error {
+  t.wgmmtx.RLock()
+  if wg, ok := t.wgm[taskGroup]; !ok {
+    t.wgmmtx.RUnlock()
+    return fmt.Errorf("invalid taskGroup")
+  } else {
+    t.wgmmtx.RUnlock()
+    // act as a worker until all tasks of this taskGroup are done
+  LOOP:
+    for {
+      if wg.Value() == 0 {
+        break LOOP
       }
-    default:
-      break LOOP
+      select {
+      case task := <- t.channel:
+        getError := func() error {
+          return t.getError(task.taskGroup)
+        }
+        if err := task.f(0, getError); err != nil {
+          switch err.(type) {
+          case threadStop:
+            panic("main thread received threadStop message")
+          default:
+            t.setError(task.taskGroup, err)
+          }
+        }
+      default:
+        // task channel is empty, wait for all tasks
+        // to complete and exit loop
+        wg.Wait()
+        break LOOP
+      }
     }
+    // get error message and return
+    err := t.getError(taskGroup)
+    t.clear(taskGroup)
+    return err
   }
-  // kill threads
-  for i := 1; i < t.NumberOfThreads(); i++ {
-    t.AddTask(nil)
-  }
-  t.wg.Wait()
-  err := t.errmsg
-  t.Launch()
-  return err
 }
 
-func (t *ThreadPool) setError(err error) {
+func (t *ThreadPool) Stop() {
+  for i := 1; i < t.NumberOfThreads(); i++ {
+    t.AddTask(-1, func(threadIdx int, erf func() error) error {
+      return threadStop{}
+    })
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+
+func (t *ThreadPool) setError(taskGroup int, err error) {
   t.errmtx.Lock()
-  t.errmsg = err
+  t.err[taskGroup] = err
   t.errmtx.Unlock()
 }
 
-func (t *ThreadPool) getError() error {
+func (t *ThreadPool) getError(taskGroup int) error {
   t.errmtx.RLock()
   defer t.errmtx.RUnlock()
-  return t.errmsg
-}
-
-func (t *ThreadPool) Launch() {
-  n := t.NumberOfThreads()
-  t.errmsg  = nil
-  t.wg.Add(n-1)
-  for i := 1; i < n; i++ {
-    go func(i int) {
-      for task := range t.channel {
-        if task == nil {
-          break
-        }
-        if err := task(i, t.getError); err != nil {
-          t.setError(err)
-        }
-      }
-      t.wg.Done()
-    }(i)
+  if err, ok := t.err[taskGroup]; ok {
+    return err
+  } else {
+    return nil
   }
 }
 
-func (t *ThreadPool) NumberOfThreads() int {
-  return t.threads
+func (t *ThreadPool) clear(taskGroup int) {
+  // clear error
+  t.errmtx.Lock()
+  delete(t.err, taskGroup)
+  t.errmtx.Unlock()
+  // clear wait group
+  t.wgmmtx.Lock()
+  delete(t.wgm, taskGroup)
+  t.wgmmtx.Unlock()
+}
+
+func (t *ThreadPool) getWaitGroup(taskGroup int) *waitGroup {
+  t.wgmmtx.RLock()
+  if wg, ok := t.wgm[taskGroup]; ok {
+    t.wgmmtx.RUnlock()
+    return wg
+  }
+  t.wgmmtx.RUnlock()
+  // add new wait group
+  wg := newWaitGroup()
+  t.wgmmtx.Lock()
+  t.wgm[taskGroup] = wg
+  t.wgmmtx.Unlock()
+  return wg
+}
+
+func (t *ThreadPool) worker(i int) {
+  for task := range t.channel {
+    getError := func() error {
+      return t.getError(task.taskGroup)
+    }
+    if err := task.f(i, getError); err != nil {
+      switch err.(type) {
+      case threadStop:
+        return
+      default:
+        t.setError(task.taskGroup, err)
+      }
+    }
+  }
+}
+
+func (t *ThreadPool) launch() {
+  for i := 1; i < t.threads; i++ {
+    go func(i int) {
+      for {
+        // start computing tasks
+        t.worker(i)
+      }
+    }(i)
+  }
 }
