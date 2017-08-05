@@ -150,13 +150,13 @@ func TestTest5(t *testing.T) {
         })
       }
       if err := p.Wait(i+1); err != nil {
-        t.Error("test failed")
+        t.Errorf("test failed: %v", err)
       }
       return nil
     })
   }
   if err := p.Wait(0); err != nil {
-    t.Error("test failed")
+    t.Error("test failed: %v", err)
   }
 }
 

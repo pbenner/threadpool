@@ -126,14 +126,23 @@ func (t *ThreadPool) NumberOfThreads() int {
 }
 
 func (t *ThreadPool) AddJob(jobGroup int, f func(threadIdx int, erf func() error) error) {
-  wg := t.getWaitGroup(jobGroup)
-  wg.Add(1)
+  if t.NumberOfThreads() == 1 {
+    getError := func() error {
+      return t.getError(jobGroup)
+    }
+    if err := f(0, getError); err != nil {
+      t.setError(jobGroup, err)
+    }
+  } else {
+    wg := t.getWaitGroup(jobGroup)
+    wg.Add(1)
 
-  g := func(threadIdx int, erf func() error) error {
-    defer wg.Done()
-    return f(threadIdx, erf)
+    g := func(threadIdx int, erf func() error) error {
+      defer wg.Done()
+      return f(threadIdx, erf)
+    }
+    t.channel <- job{g, jobGroup}
   }
-  t.channel <- job{g, jobGroup}
 }
 
 func (t *ThreadPool) AddRangeJob(iFrom, iTo int, jobGroup int, f func(i, threadIdx int, erf func() error) error) {
@@ -156,38 +165,40 @@ func (t *ThreadPool) AddRangeJob(iFrom, iTo int, jobGroup int, f func(i, threadI
 }
 
 func (t *ThreadPool) Wait(jobGroup int) error {
-  t.wgmmtx.RLock()
-  if wg, ok := t.wgm[jobGroup]; !ok {
-    t.wgmmtx.RUnlock()
-    return fmt.Errorf("invalid jobGroup")
-  } else {
-    t.wgmmtx.RUnlock()
-    // act as a worker until all jobs of this jobGroup are done
-  LOOP:
-    for {
-      if wg.Value() == 0 {
-        break LOOP
-      }
-      select {
-      case job := <- t.channel:
-        getError := func() error {
-          return t.getError(job.jobGroup)
+  if t.NumberOfThreads() > 1 {
+    t.wgmmtx.RLock()
+    if wg, ok := t.wgm[jobGroup]; !ok {
+      t.wgmmtx.RUnlock()
+      return fmt.Errorf("invalid jobGroup")
+    } else {
+      t.wgmmtx.RUnlock()
+      // act as a worker until all jobs of this jobGroup are done
+    LOOP:
+      for {
+        if wg.Value() == 0 {
+          break LOOP
         }
-        if err := job.f(0, getError); err != nil {
-          t.setError(job.jobGroup, err)
+        select {
+        case job := <- t.channel:
+          getError := func() error {
+            return t.getError(job.jobGroup)
+          }
+          if err := job.f(0, getError); err != nil {
+            t.setError(job.jobGroup, err)
+          }
+        default:
+          // job channel is empty, wait for all jobs
+          // to complete and exit loop
+          wg.Wait()
+          break LOOP
         }
-      default:
-        // job channel is empty, wait for all jobs
-        // to complete and exit loop
-        wg.Wait()
-        break LOOP
       }
     }
-    // get error message and return
-    err := t.getError(jobGroup)
-    t.clear(jobGroup)
-    return err
   }
+  // get error message and return
+  err := t.getError(jobGroup)
+  t.clear(jobGroup)
+  return err
 }
 
 func (t *ThreadPool) Start() {
