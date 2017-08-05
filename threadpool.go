@@ -120,9 +120,12 @@ func (t *ThreadPool) NewTaskGroup() int {
     // increment counter until no wait group is
     // found
     i := t.cnt; t.cnt += 1
+    t.wgmmtx.RLock()
     if _, ok := t.wgm[i]; !ok {
+      t.wgmmtx.RUnlock()
       return i
     }
+    t.wgmmtx.RUnlock()
   }
 }
 
