@@ -146,7 +146,11 @@ func (t *ThreadPool) AddJob(jobGroup int, f func(threadIdx int, erf func() error
 }
 
 func (t *ThreadPool) AddRangeJob(iFrom, iTo int, jobGroup int, f func(i, threadIdx int, erf func() error) error) {
-  n := (iTo-iFrom)/t.NumberOfThreads()
+  m := t.NumberOfThreads()
+  if m > iTo-iFrom {
+    m = iTo-iFrom
+  }
+  n := (iTo-iFrom)/m
   for j := iFrom; j < iTo; j += n {
     iFrom_ := j
     iTo_   := j+n
