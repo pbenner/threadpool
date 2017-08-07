@@ -104,7 +104,7 @@ Go / Golang thread-pool library that supports nested job queuing.
       })
     }
     // wait until sub-slice i is filled
-    pool.Wait(gi)
+    pool.WaitNested(gi, threadIdx)
     return nil
   })
   // wait until the whole slice is filled

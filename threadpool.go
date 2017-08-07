@@ -168,7 +168,7 @@ func (t *ThreadPool) AddRangeJob(iFrom, iTo int, jobGroup int, f func(i, threadI
   }
 }
 
-func (t *ThreadPool) Wait(jobGroup int) error {
+func (t *ThreadPool) WaitNested(jobGroup, threadId int) error {
   if t.NumberOfThreads() > 1 {
     t.wgmmtx.RLock()
     if wg, ok := t.wgm[jobGroup]; !ok {
@@ -187,7 +187,7 @@ func (t *ThreadPool) Wait(jobGroup int) error {
           getError := func() error {
             return t.getError(job.jobGroup)
           }
-          if err := job.f(0, getError); err != nil {
+          if err := job.f(threadId, getError); err != nil {
             t.setError(job.jobGroup, err)
           }
         default:
@@ -203,6 +203,10 @@ func (t *ThreadPool) Wait(jobGroup int) error {
   err := t.getError(jobGroup)
   t.clear(jobGroup)
   return err
+}
+
+func (t *ThreadPool) Wait(jobGroup int) error {
+  return t.WaitNested(jobGroup, 0)
 }
 
 func (t *ThreadPool) Start() {

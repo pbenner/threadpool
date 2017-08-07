@@ -249,7 +249,7 @@ func TestExample4(t *testing.T) {
       })
     }
     // wait until sub-slice i is filled
-    pool.Wait(gi)
+    pool.WaitNested(gi, threadIdx)
     return nil
   })
   // wait until the whole slice is filled
