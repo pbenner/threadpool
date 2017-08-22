@@ -141,7 +141,11 @@ func (t *ThreadPool) AddJob(jobGroup int, f func(threadIdx int, erf func() error
       defer wg.Done()
       return f(threadIdx, erf)
     }
-    t.channel <- job{g, jobGroup}
+    select {
+    case t.channel <- job{g, jobGroup}:
+    default:
+      panic("adding job failed: queue buffer overflow")
+    }
   }
 }
 
