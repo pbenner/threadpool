@@ -24,7 +24,7 @@ import "sync"
 /* -------------------------------------------------------------------------- */
 
 type job struct {
-  f func(int, func() error) error
+  f func(ThreadPool, func() error) error
   jobGroup int
 }
 
@@ -70,7 +70,7 @@ func (obj *waitGroup) Wait() {
 
 /* -------------------------------------------------------------------------- */
 
-type ThreadPool struct {
+type threadPool struct {
   threads  int
   bufsize  int
   channel  chan job
@@ -82,30 +82,9 @@ type ThreadPool struct {
   err      map[int]error
 }
 
-func NewThreadPool(threads, bufsize int) *ThreadPool {
-  if threads < 1 {
-    panic("invalid number of threads")
-  }
-  if bufsize < 1 {
-    panic("invalid bufsize")
-  }
-  t := ThreadPool{}
-  t.threads  = threads
-  t.bufsize  = bufsize
-  t.cntmtx   = new(sync.RWMutex)
-  t.cnt      = 0
-  t.wgmmtx   = new(sync.RWMutex)
-  t.wgm      = make(map[int]*waitGroup)
-  t.errmtx   = new(sync.RWMutex)
-  t.err      = make(map[int]error)
-  // create threads
-  t.Start()
-  return &t
-}
-
 /* -------------------------------------------------------------------------- */
 
-func (t *ThreadPool) NewJobGroup() int {
+func (t *threadPool) NewJobGroup() int {
   t.cntmtx.Lock()
   defer t.cntmtx.Unlock()
   for {
@@ -121,35 +100,126 @@ func (t *ThreadPool) NewJobGroup() int {
   }
 }
 
-func (t *ThreadPool) NumberOfThreads() int {
+func (t *threadPool) NumberOfThreads() int {
   return t.threads
 }
 
-func (t *ThreadPool) AddJob(jobGroup int, f func(threadIdx int, erf func() error) error) {
+func (t *threadPool) Start() {
+  t.channel = make(chan job, t.bufsize)
+  for i := 1; i < t.threads; i++ {
+    go func(i int) {
+      for {
+        // start computing jobs
+        t.worker(i)
+      }
+    }(i)
+  }
+}
+
+func (t *threadPool) Stop() {
+  close(t.channel)
+}
+
+/* -------------------------------------------------------------------------- */
+
+func (t *threadPool) setError(jobGroup int, err error) {
+  t.errmtx.Lock()
+  t.err[jobGroup] = err
+  t.errmtx.Unlock()
+}
+
+func (t *threadPool) getError(jobGroup int) error {
+  t.errmtx.RLock()
+  defer t.errmtx.RUnlock()
+  if err, ok := t.err[jobGroup]; ok {
+    return err
+  } else {
+    return nil
+  }
+}
+
+func (t *threadPool) clear(jobGroup int) {
+  // clear error
+  t.errmtx.Lock()
+  delete(t.err, jobGroup)
+  t.errmtx.Unlock()
+  // clear wait group
+  t.wgmmtx.Lock()
+  delete(t.wgm, jobGroup)
+  t.wgmmtx.Unlock()
+}
+
+func (t *threadPool) getWaitGroup(jobGroup int) *waitGroup {
+  t.wgmmtx.RLock()
+  if wg, ok := t.wgm[jobGroup]; ok {
+    t.wgmmtx.RUnlock()
+    return wg
+  }
+  t.wgmmtx.RUnlock()
+  // add new wait group
+  wg := newWaitGroup()
+  t.wgmmtx.Lock()
+  t.wgm[jobGroup] = wg
+  t.wgmmtx.Unlock()
+  return wg
+}
+
+func (t *threadPool) worker(i int) {
+  for job := range t.channel {
+    getError := func() error {
+      return t.getError(job.jobGroup)
+    }
+    if err := job.f(ThreadPool{t, i}, getError); err != nil {
+      t.setError(job.jobGroup, err)
+    }
+  }
+}
+
+/* -------------------------------------------------------------------------- */
+
+type ThreadPool struct {
+  *threadPool
+  // main thread id
+  threadId int
+}
+
+func (t ThreadPool) IsNil() bool {
+  return t.threadPool == nil
+}
+
+func (t ThreadPool) GetThreadId() int {
+  return t.threadId
+}
+
+func (t ThreadPool) AddJob(jobGroup int, f func(pool ThreadPool, erf func() error) error) {
   if t.NumberOfThreads() == 1 {
     getError := func() error {
       return t.getError(jobGroup)
     }
-    if err := f(0, getError); err != nil {
+    if err := f(t, getError); err != nil {
       t.setError(jobGroup, err)
     }
   } else {
     wg := t.getWaitGroup(jobGroup)
     wg.Add(1)
 
-    g := func(threadIdx int, erf func() error) error {
+    g := func(pool ThreadPool, erf func() error) error {
       defer wg.Done()
-      return f(threadIdx, erf)
+      return f(pool, erf)
     }
     select {
     case t.channel <- job{g, jobGroup}:
     default:
-      panic("adding job failed: queue buffer overflow")
+      // channel buffer is full, execute job here
+      getError := func() error {
+        return t.getError(jobGroup)
+      }
+      g(t, getError)
     }
   }
 }
 
-func (t *ThreadPool) AddRangeJob(iFrom, iTo int, jobGroup int, f func(i, threadIdx int, erf func() error) error) {
+func (t ThreadPool) AddRangeJob(iFrom, iTo int, jobGroup int, f func(i int, pool ThreadPool, erf func() error) error) {
   m := t.NumberOfThreads()
   if m > iTo-iFrom {
     m = iTo-iFrom
@@ -161,9 +231,9 @@ func (t *ThreadPool) AddRangeJob(iFrom, iTo int, jobGroup int, f func(i, threadI
     if iTo_ > iTo {
       iTo_ = iTo
     }
-    t.AddJob(jobGroup, func(threadIdx int, erf func() error) error {
+    t.AddJob(jobGroup, func(pool ThreadPool, erf func() error) error {
       for i := iFrom_; i < iTo_; i++ {
-        if err := f(i, threadIdx, erf); err != nil {
+        if err := f(i, pool, erf); err != nil {
           return err
         }
       }
@@ -172,7 +242,7 @@ func (t *ThreadPool) AddRangeJob(iFrom, iTo int, jobGroup int, f func(i, threadI
   }
 }
 
-func (t *ThreadPool) WaitNested(jobGroup, threadId int) error {
+func (t ThreadPool) Wait(jobGroup int) error {
   if t.NumberOfThreads() > 1 {
     t.wgmmtx.RLock()
     if wg, ok := t.wgm[jobGroup]; !ok {
@@ -191,7 +261,7 @@ func (t *ThreadPool) WaitNested(jobGroup, threadId int) error {
           getError := func() error {
             return t.getError(job.jobGroup)
           }
-          if err := job.f(threadId, getError); err != nil {
+          if err := job.f(t, getError); err != nil {
             t.setError(job.jobGroup, err)
           }
         default:
@@ -209,77 +279,25 @@ func (t *ThreadPool) WaitNested(jobGroup, threadId int) error {
   return err
 }
 
-func (t *ThreadPool) Wait(jobGroup int) error {
-  return t.WaitNested(jobGroup, 0)
-}
-
-func (t *ThreadPool) Start() {
-  t.channel = make(chan job, t.bufsize)
-  for i := 1; i < t.threads; i++ {
-    go func(i int) {
-      for {
-        // start computing jobs
-        t.worker(i)
-      }
-    }(i)
-  }
-}
-
-func (t *ThreadPool) Stop() {
-  close(t.channel)
-}
-
 /* -------------------------------------------------------------------------- */
 
-func (t *ThreadPool) setError(jobGroup int, err error) {
-  t.errmtx.Lock()
-  t.err[jobGroup] = err
-  t.errmtx.Unlock()
-}
-
-func (t *ThreadPool) getError(jobGroup int) error {
-  t.errmtx.RLock()
-  defer t.errmtx.RUnlock()
-  if err, ok := t.err[jobGroup]; ok {
-    return err
-  } else {
-    return nil
+func NewThreadPool(threads, bufsize int) ThreadPool {
+  if threads < 1 {
+    panic("invalid number of threads")
   }
-}
-
-func (t *ThreadPool) clear(jobGroup int) {
-  // clear error
-  t.errmtx.Lock()
-  delete(t.err, jobGroup)
-  t.errmtx.Unlock()
-  // clear wait group
-  t.wgmmtx.Lock()
-  delete(t.wgm, jobGroup)
-  t.wgmmtx.Unlock()
-}
-
-func (t *ThreadPool) getWaitGroup(jobGroup int) *waitGroup {
-  t.wgmmtx.RLock()
-  if wg, ok := t.wgm[jobGroup]; ok {
-    t.wgmmtx.RUnlock()
-    return wg
+  if bufsize < 1 {
+    panic("invalid bufsize")
   }
-  t.wgmmtx.RUnlock()
-  // add new wait group
-  wg := newWaitGroup()
-  t.wgmmtx.Lock()
-  t.wgm[jobGroup] = wg
-  t.wgmmtx.Unlock()
-  return wg
-}
-
-func (t *ThreadPool) worker(i int) {
-  for job := range t.channel {
-    getError := func() error {
-      return t.getError(job.jobGroup)
-    }
-    if err := job.f(i, getError); err != nil {
-      t.setError(job.jobGroup, err)
-    }
-  }
+  t := threadPool{}
+  t.threads  = threads
+  t.bufsize  = bufsize
+  t.cntmtx   = new(sync.RWMutex)
+  t.cnt      = 0
+  t.wgmmtx   = new(sync.RWMutex)
+  t.wgm      = make(map[int]*waitGroup)
+  t.errmtx   = new(sync.RWMutex)
+  t.err      = make(map[int]error)
+  // create threads
+  t.Start()
+  return ThreadPool{&t, 0}
 }

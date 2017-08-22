@@ -21,9 +21,9 @@ Go / Golang thread-pool library that supports nested job queuing.
   // r[i] to the thread index
   for i_, _ := range r {
     i := i_
-    pool.AddJob(g, func(threadIdx int, erf func() error) error {
+    pool.AddJob(g, func(pool ThreadPool, erf func() error) error {
       time.Sleep(10 * time.Millisecond)
-      r[i] = threadIdx+1
+      r[i] = pool.GetThreadId()+1
       return nil
     })
   }
@@ -43,9 +43,9 @@ Go / Golang thread-pool library that supports nested job queuing.
   // instead of creating len(r) jobs, this method splits
   // r into #threads pieces and adds one job for each piece
   // to increase efficiency
-  pool.AddRangeJob(0, len(r), g, func(i, threadIdx int, erf func() error) error {
+  pool.AddRangeJob(0, len(r), g, func(i int, pool ThreadPool, erf func() error) error {
     time.Sleep(10 * time.Millisecond)
-    r[i] = threadIdx+1
+    r[i] = pool.GetThreadId()+1
     return nil
   })
   pool.Wait(g)
@@ -59,19 +59,19 @@ Go / Golang thread-pool library that supports nested job queuing.
   g := pool.NewJobGroup()
   r := make([]int, 20)
 
-  pool.AddRangeJob(0, len(r), g, func(i, threadIdx int, erf func() error) error {
+  pool.AddRangeJob(0, len(r), g, func(i int, pool ThreadPool, erf func() error) error {
     time.Sleep(10 * time.Millisecond)
     // stop if there was an error in one of the
     // previous jobs
     if erf() != nil {
+      // stop if there was an error
       return nil
     }
-    // return an error at position 2
     if i == 2 {
       r[i] = -1
-      return fmt.Errorf("error in thread %d", threadIdx)
+      return fmt.Errorf("error in thread %d", pool.GetThreadId())
     } else {
-      r[i] = threadIdx+1
+      r[i] = pool.GetThreadId()+1
       return nil
     }
   })
@@ -88,7 +88,7 @@ Go / Golang thread-pool library that supports nested job queuing.
   g0 := pool.NewJobGroup()
   r  := make([][]int, 5)
 
-  pool.AddRangeJob(0, len(r), g0, func(i, threadIdx int, erf func() error) error {
+  pool.AddRangeJob(0, len(r), g0, func(i int, pool ThreadPool, erf func() error) error {
     r[i] = make([]int, 5)
 
     // get a new job group for filling the i'th sub-slice, which allows
@@ -97,14 +97,14 @@ Go / Golang thread-pool library that supports nested job queuing.
 
     for j_, _ := range r[i] {
       j := j_
-      pool.AddJob(gi, func(threadIdx int, erf func() error) error {
+      pool.AddJob(gi, func(p ThreadPool, erf func() error) error {
         time.Sleep(10 * time.Millisecond)
-        r[i][j] = threadIdx+1
+        r[i][j] = pool.GetThreadId()+1
         return nil
       })
     }
     // wait until sub-slice i is filled
-    pool.WaitNested(gi, threadIdx)
+    pool.Wait(gi)
     return nil
   })
   // wait until the whole slice is filled

@@ -33,17 +33,17 @@ func TestTest1(t *testing.T) {
   // add jobs
   for i_ := 0; i_ < 100; i_++ {
     i := i_
-    p.AddJob(0, func(threadIdx int, erf func() error) error {
+    p.AddJob(0, func(p ThreadPool, erf func() error) error {
       // do nothing if there was an error
       if erf() != nil {
         return nil
       }
       // count the number of jobs this thread
       // finished
-      if r[threadIdx] > 3 {
+      if r[p.GetThreadId()] > 3 {
         return fmt.Errorf("error in job %d", i)
       }
-      r[threadIdx]++
+      r[p.GetThreadId()]++
       return nil
     })
   }
@@ -61,17 +61,17 @@ func TestTest2(t *testing.T) {
   jobGroup := 0
 
   // add jobs
-  p.AddRangeJob(0, 100, jobGroup, func(i, threadIdx int, erf func() error) error {
+  p.AddRangeJob(0, 100, jobGroup, func(i int, p ThreadPool, erf func() error) error {
     // do nothing if there was an error
     if erf() != nil {
       return nil
     }
     // count the number of jobs this thread
     // finished
-    if r[threadIdx] > 3 {
+    if r[p.GetThreadId()] > 3 {
       return fmt.Errorf("error in thread %d", i)
     }
-    r[threadIdx]++
+    r[p.GetThreadId()]++
     return nil
   })
   if err := p.Wait(jobGroup); err == nil {
@@ -86,17 +86,17 @@ func TestTest3(t *testing.T) {
   r := make([]int, n)
 
   // add jobs
-  p.AddRangeJob(0, 100, 0, func(i, threadIdx int, erf func() error) error {
+  p.AddRangeJob(0, 100, 0, func(i int, p ThreadPool, erf func() error) error {
     // do nothing if there was an error
     if erf() != nil {
       return nil
     }
     // count the number of jobs this thread
     // finished
-    if r[threadIdx] > 3 {
+    if r[p.GetThreadId()] > 3 {
       return fmt.Errorf("error in thread %d", i)
     }
-    r[threadIdx]++
+    r[p.GetThreadId()]++
     return nil
   })
   if err := p.Wait(0); err == nil {
@@ -114,9 +114,9 @@ func TestTest4(t *testing.T) {
   // add jobs
   for i_ := 0; i_ < m; i_++ {
     i := i_
-    p.AddJob(0, func(threadIdx int, erf func() error) error {
+    p.AddJob(0, func(p ThreadPool, erf func() error) error {
       for j := 0; j < m; j++ {
-        p.AddJob(i+1, func(threadIdx int, erf func() error) error {
+        p.AddJob(i+1, func(p ThreadPool, erf func() error) error {
           r[i]++
           return nil
         })
@@ -142,9 +142,9 @@ func TestTest5(t *testing.T) {
   // add jobs
   for i_ := 0; i_ < m; i_++ {
     i := i_
-    p.AddJob(0, func(threadIdx int, erf func() error) error {
+    p.AddJob(0, func(p ThreadPool, erf func() error) error {
       for j := 0; j < m; j++ {
-        p.AddJob(i+1, func(threadIdx int, erf func() error) error {
+        p.AddJob(i+1, func(p ThreadPool, erf func() error) error {
           r[i]++
           return nil
         })
@@ -164,20 +164,29 @@ func TestTest5(t *testing.T) {
 
 // Demonstrate AddJob
 func TestExample1(t *testing.T) {
-
+  // create a new thread pool with 5 working threads and
+  // a queue buffer of 100 (in addition to this thread, 4
+  // more threads will be launched that start reading
+  // from the job queue)
   pool := NewThreadPool(5, 100)
 
+  // jobs are always grouped, get a new group index
   g := pool.NewJobGroup()
+  // slice carrying the results
   r := make([]int, 20)
 
+  // add jobs to the thread pool, where the i'th job sets
+  // r[i] to the thread index
   for i_, _ := range r {
     i := i_
-    pool.AddJob(g, func(threadIdx int, erf func() error) error {
+    pool.AddJob(g, func(pool ThreadPool, erf func() error) error {
       time.Sleep(10 * time.Millisecond)
-      r[i] = threadIdx+1
+      r[i] = pool.GetThreadId()+1
       return nil
     })
   }
+  // wait until all jobs in group g are done, meanwhile, this thread
+  // is also used as a worker
   pool.Wait(g)
   fmt.Println("result:", r)
 }
@@ -190,9 +199,12 @@ func TestExample2(t *testing.T) {
   g := pool.NewJobGroup()
   r := make([]int, 20)
 
-  pool.AddRangeJob(0, len(r), g, func(i, threadIdx int, erf func() error) error {
+  // instead of creating len(r) jobs, this method splits
+  // r into #threads pieces and adds one job for each piece
+  // to increase efficiency
+  pool.AddRangeJob(0, len(r), g, func(i int, pool ThreadPool, erf func() error) error {
     time.Sleep(10 * time.Millisecond)
-    r[i] = threadIdx+1
+    r[i] = pool.GetThreadId()+1
     return nil
   })
   pool.Wait(g)
@@ -207,17 +219,19 @@ func TestExample3(t *testing.T) {
   g := pool.NewJobGroup()
   r := make([]int, 20)
 
-  pool.AddRangeJob(0, len(r), g, func(i, threadIdx int, erf func() error) error {
+  pool.AddRangeJob(0, len(r), g, func(i int, pool ThreadPool, erf func() error) error {
     time.Sleep(10 * time.Millisecond)
+    // stop if there was an error in one of the
+    // previous jobs
     if erf() != nil {
       // stop if there was an error
       return nil
     }
     if i == 2 {
       r[i] = -1
-      return fmt.Errorf("error in thread %d", threadIdx)
+      return fmt.Errorf("error in thread %d", pool.GetThreadId())
     } else {
-      r[i] = threadIdx+1
+      r[i] = pool.GetThreadId()+1
       return nil
     }
   })
@@ -235,21 +249,23 @@ func TestExample4(t *testing.T) {
   g0 := pool.NewJobGroup()
   r  := make([][]int, 5)
 
-  pool.AddRangeJob(0, len(r), g0, func(i, threadIdx int, erf func() error) error {
+  pool.AddRangeJob(0, len(r), g0, func(i int, pool ThreadPool, erf func() error) error {
     r[i] = make([]int, 5)
 
+    // get a new job group for filling the i'th sub-slice, which allows
+    // us to wait until the sub-slice is filled
     gi := pool.NewJobGroup()
 
     for j_, _ := range r[i] {
       j := j_
-      pool.AddJob(gi, func(threadIdx int, erf func() error) error {
+      pool.AddJob(gi, func(p ThreadPool, erf func() error) error {
         time.Sleep(10 * time.Millisecond)
-        r[i][j] = threadIdx+1
+        r[i][j] = pool.GetThreadId()+1
         return nil
       })
     }
     // wait until sub-slice i is filled
-    pool.WaitNested(gi, threadIdx)
+    pool.Wait(gi)
     return nil
   })
   // wait until the whole slice is filled
