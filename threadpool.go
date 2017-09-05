@@ -220,7 +220,7 @@ func (t ThreadPool) AddJob(jobGroup int, f func(pool ThreadPool, erf func() erro
 }
 
 func (t ThreadPool) AddRangeJob(iFrom, iTo int, jobGroup int, f func(i int, pool ThreadPool, erf func() error) error) {
-  if iFrom == iTo {
+  if iFrom >= iTo {
     return
   }
   m := t.NumberOfThreads()
