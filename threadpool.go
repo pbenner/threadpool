@@ -250,7 +250,9 @@ func (t ThreadPool) Wait(jobGroup int) error {
     t.wgmmtx.RLock()
     if wg, ok := t.wgm[jobGroup]; !ok {
       t.wgmmtx.RUnlock()
-      return fmt.Errorf("invalid jobGroup")
+      // wait group has not been created, nothing
+      // to wait for
+      return nil
     } else {
       t.wgmmtx.RUnlock()
       // act as a worker until all jobs of this jobGroup are done
