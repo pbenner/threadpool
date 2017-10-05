@@ -79,6 +79,8 @@ type threadPool struct {
   wgm      map[int]*waitGroup
   errmtx  *sync.RWMutex
   err      map[int]error
+  vammtx  *sync.RWMutex
+  vam      map[int]interface{}
 }
 
 /* -------------------------------------------------------------------------- */
@@ -146,6 +148,10 @@ func (t *threadPool) clear(jobGroup int) {
   t.wgmmtx.Lock()
   delete(t.wgm, jobGroup)
   t.wgmmtx.Unlock()
+  // clear variables
+  t.vammtx.Lock()
+  delete(t.vam, jobGroup)
+  t.vammtx.Unlock()
 }
 
 func (t *threadPool) getWaitGroup(jobGroup int) *waitGroup {
@@ -285,6 +291,57 @@ func (t ThreadPool) Wait(jobGroup int) error {
 
 /* -------------------------------------------------------------------------- */
 
+func (t ThreadPool) GetVariable(jobGroup int) interface{} {
+  t.vammtx.RLock()
+  v := t.vam[jobGroup]
+  t.vammtx.Unlock()
+  return v
+}
+
+func (t ThreadPool) UpdateVariable(jobGroup int, f func(v interface{}) interface{}) interface{} {
+  t.vammtx.Lock()
+  v := f(t.vam[jobGroup])
+  t.vam[jobGroup] = v
+  t.vammtx.Unlock()
+  return v
+}
+
+func (t ThreadPool) SetVariable(jobGroup int, v interface{}) {
+  t.vammtx.Lock()
+  t.vam[jobGroup] = v
+  t.vammtx.Unlock()
+}
+
+func (t ThreadPool) GetIntVariable(jobGroup int) int {
+  v := 0
+  t.vammtx.RLock()
+  if t, ok := t.vam[jobGroup]; ok {
+    v = t.(int)
+  }
+  t.vammtx.Unlock()
+  return v
+}
+
+func (t ThreadPool) UpdateIntVariable(jobGroup int, f func(int) int) int {
+  v := 0
+  t.vammtx.Lock()
+  if t, ok := t.vam[jobGroup]; ok {
+    v = t.(int)
+  }
+  v = f(v)
+  t.vam[jobGroup] = v
+  t.vammtx.Unlock()
+  return v
+}
+
+func (t ThreadPool) SetIntVariable(jobGroup int, v int) {
+  t.vammtx.Lock()
+  t.vam[jobGroup] = v
+  t.vammtx.Unlock()
+}
+
+/* -------------------------------------------------------------------------- */
+
 func NewThreadPool(threads, bufsize int) ThreadPool {
   if threads < 1 {
     panic("invalid number of threads")
@@ -301,6 +358,8 @@ func NewThreadPool(threads, bufsize int) ThreadPool {
   t.wgm      = make(map[int]*waitGroup)
   t.errmtx   = new(sync.RWMutex)
   t.err      = make(map[int]error)
+  t.vammtx   = new(sync.RWMutex)
+  t.vam      = make(map[int]interface{})
   // create threads
   t.Start()
   return ThreadPool{&t, 0}
