@@ -86,7 +86,7 @@ func TestTest3(t *testing.T) {
   r := make([]int, n)
 
   // add jobs
-  p.AddRangeJob(0, 100, 0, func(i int, p ThreadPool, erf func() error) error {
+  if err := p.AddRangeJob(0, 100, 0, func(i int, p ThreadPool, erf func() error) error {
     // do nothing if there was an error
     if erf() != nil {
       return nil
@@ -98,8 +98,10 @@ func TestTest3(t *testing.T) {
     }
     r[p.GetThreadId()]++
     return nil
-  })
-  if err := p.Wait(0); err == nil {
+  }); err == nil {
+    t.Error("test failed")
+  }
+  if err := p.Wait(0); err != nil {
     t.Error("test failed")
   }
 }
@@ -219,7 +221,7 @@ func TestExample3(t *testing.T) {
   g := pool.NewJobGroup()
   r := make([]int, 20)
 
-  pool.AddRangeJob(0, len(r), g, func(i int, pool ThreadPool, erf func() error) error {
+  if err := pool.AddRangeJob(0, len(r), g, func(i int, pool ThreadPool, erf func() error) error {
     time.Sleep(10 * time.Millisecond)
     // stop if there was an error in one of the
     // previous jobs
@@ -234,7 +236,9 @@ func TestExample3(t *testing.T) {
       r[i] = pool.GetThreadId()+1
       return nil
     }
-  })
+  }); err != nil {
+    fmt.Println(err)
+  }
   if err := pool.Wait(g); err != nil {
     fmt.Println(err)
   }

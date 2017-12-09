@@ -59,7 +59,7 @@ Go / Golang thread-pool library that supports nested job queuing.
   g := pool.NewJobGroup()
   r := make([]int, 20)
 
-  pool.AddRangeJob(0, len(r), g, func(i int, pool ThreadPool, erf func() error) error {
+  if err := pool.AddRangeJob(0, len(r), g, func(i int, pool ThreadPool, erf func() error) error {
     time.Sleep(10 * time.Millisecond)
     // stop if there was an error in one of the
     // previous jobs
@@ -74,7 +74,9 @@ Go / Golang thread-pool library that supports nested job queuing.
       r[i] = pool.GetThreadId()+1
       return nil
     }
-  })
+  }); err != nil {
+    fmt.Println(err)
+  }
   if err := pool.Wait(g); err != nil {
     fmt.Println(err)
   }
