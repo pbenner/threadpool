@@ -102,7 +102,11 @@ func (t *threadPool) NewJobGroup() int {
 }
 
 func (t *threadPool) NumberOfThreads() int {
-  return t.threads
+  if t == nil {
+    return 1
+  } else {
+    return t.threads
+  }
 }
 
 func (t *threadPool) Start() {
