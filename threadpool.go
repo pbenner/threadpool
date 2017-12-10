@@ -260,6 +260,17 @@ func (t ThreadPool) AddRangeJob(iFrom, iTo int, jobGroup int, f func(i int, pool
   return nil
 }
 
+func (t ThreadPool) RangeJob(iFrom, iTo int, f func(i int, pool ThreadPool, erf func() error) error) error {
+  g := t.NewJobGroup()
+  if err := t.AddRangeJob(iFrom, iTo, g, f); err != nil {
+    return err
+  }
+  if err := t.Wait(g); err != nil {
+    return err
+  }
+  return nil
+}
+
 func (t ThreadPool) Wait(jobGroup int) error {
   if t.NumberOfThreads() == 1 {
     return nil
