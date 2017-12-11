@@ -225,7 +225,9 @@ func (t ThreadPool) AddJob(jobGroup int, f func(pool ThreadPool, erf func() erro
       getError := func() error {
         return t.getError(jobGroup)
       }
-      g(t, getError)
+      if err := g(t, getError); err != nil {
+        t.setError(jobGroup, err)
+      }
     }
   }
   return nil
