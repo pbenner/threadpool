@@ -16,7 +16,7 @@ Go / Golang thread-pool library that supports nested job queuing. The general pr
   g1 := pool.NewJobGroup()
 
   // add a new job to group g1
-  pool.AddJob(g1, func(pool ThreadPool, erf func() error) error {
+  if err := pool.AddJob(g1, func(pool ThreadPool, erf func() error) error {
     // check if there was an error in one of the other tasks
     if erf() != nil {
       return nil
@@ -31,9 +31,22 @@ Go / Golang thread-pool library that supports nested job queuing. The general pr
 
     // do some work here...
 
+    // a job may also add other jobs to the queue...
+    g2 := pool.NewJobGroup()
+    if err := pool.AddJob(g2, func(pool ThreadPool, erf func() error) error {
+      // do some work here...
+    }); err != nil {
+      // some task returned an error
+    }
+    if err := pool.Wait(g1); err != nil {
+      // some task returned an error
+    }
+
     // return nil if task is done
     return nil
-  })
+  }); err != nil {
+    // some task returned an error
+  }
   // add other tasks to g1...
 
   // wait until all tasks are done
