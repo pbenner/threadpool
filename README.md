@@ -10,7 +10,7 @@ Go / Golang thread-pool library that supports nested job queuing. The general pr
   pool := NewThreadPool(5, 100)
 
   // allocate some memory for each thread
-  data := make([]Data, pool.NumberOfThreads())
+  data := make([]ThreadData, pool.NumberOfThreads())
 
   // jobs are always grouped, get a new group index
   g1 := pool.NewJobGroup()
