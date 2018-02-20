@@ -59,6 +59,14 @@ Go / Golang thread-pool library that supports nested job queuing. The general pr
   pool.Stop()
 ```
 
+Any of the following functions can be used to add jobs to the queue:
+| ----------- | --------------------------------------------------------------------------- |
+| AddJob      | add a single job to the queue                                               |
+| AddRangeJob | add a range job to the queue (replaces for-loops)                           |
+| Job         | create a job group, add a single job to the queue and wait until it is done |
+| RangeJob    | create a job group, add a range job to the queue and wait until it is done  |
+| ----------- | --------------------------------------------------------------------------- |
+
 ## Examples
 
 ### Example 1: Simple job queuing
