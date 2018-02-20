@@ -18,6 +18,7 @@ package threadpool
 
 /* -------------------------------------------------------------------------- */
 
+//import "fmt"
 import "sync"
 
 /* -------------------------------------------------------------------------- */
@@ -118,19 +119,23 @@ func (t *threadPool) Start() {
   if t == nil {
     return
   }
+  if t.channelOpen() {
+    return
+  }
   t.channel = make(chan job, t.bufsize)
   for i := 1; i < t.threads; i++ {
     go func(i int) {
-      for {
-        // start computing jobs
-        t.worker(i)
-      }
+      // start computing jobs
+      t.worker(i)
     }(i)
   }
 }
 
 func (t *threadPool) Stop() {
-  if t != nil {
+  if t == nil {
+    return
+  }
+  if !t.channelOpen() {
     return
   }
   close(t.channel)
@@ -188,6 +193,24 @@ func (t *threadPool) worker(i int) {
     if err := job.f(ThreadPool{t, i}, getError); err != nil {
       t.setError(job.jobGroup, err)
     }
+  }
+}
+
+func (t *threadPool) channelOpen() bool {
+  if t.channel == nil {
+    return false
+  }
+  select {
+  case job, ok := <- t.channel:
+    if !ok {
+      return false
+    }
+    // threadpool already active (job received)
+    t.channel <- job
+    return true
+  default:
+    // threadpool already active (no jobs)
+    return true
   }
 }
 
