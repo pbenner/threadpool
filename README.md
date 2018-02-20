@@ -60,6 +60,7 @@ Go / Golang thread-pool library that supports nested job queuing. The general pr
 ```
 
 Any of the following functions can be used to add jobs to the queue:
+
 | Function    | Description                                           |
 | ----------- | --------------------------------------------------------------------------- |
 | AddJob      | add a single job to the queue                                               |
