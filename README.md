@@ -55,6 +55,8 @@ Go / Golang thread-pool library that supports nested job queuing. The general pr
   if err := pool.Wait(g1); err != nil {
     // some task returned an error
   }
+  // stop all threads
+  pool.Stop()
 ```
 
 ## Examples
