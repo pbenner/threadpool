@@ -262,7 +262,7 @@ func TestExample4(t *testing.T) {
 
     for j_, _ := range r[i] {
       j := j_
-      pool.AddJob(gi, func(p ThreadPool, erf func() error) error {
+      pool.AddJob(gi, func(pool ThreadPool, erf func() error) error {
         time.Sleep(10 * time.Millisecond)
         r[i][j] = pool.GetThreadId()+1
         return nil
