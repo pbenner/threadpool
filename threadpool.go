@@ -83,6 +83,8 @@ type threadPool struct {
 
 /* -------------------------------------------------------------------------- */
 
+// Each job belongs to a given job group. This allows the main
+// thread to wait until all jobs in a group are done
 func (t *threadPool) NewJobGroup() int {
   if t == nil {
     return 0
@@ -102,6 +104,8 @@ func (t *threadPool) NewJobGroup() int {
   }
 }
 
+// Returns the number of threads including the main
+// thread
 func (t *threadPool) NumberOfThreads() int {
   if t == nil {
     return 1
@@ -195,6 +199,7 @@ type ThreadPool struct {
   threadId int
 }
 
+// Get the ID of the main thread
 func (t ThreadPool) GetThreadId() int {
   if t.NumberOfThreads() == 1 {
     return 0
@@ -202,77 +207,10 @@ func (t ThreadPool) GetThreadId() int {
   return t.threadId
 }
 
-func (t ThreadPool) AddJob(jobGroup int, f func(pool ThreadPool, erf func() error) error) error {
-  if t.NumberOfThreads() == 1 {
-    getError := func() error {
-      return nil
-    }
-    if err := f(t, getError); err != nil {
-      return err
-    }
-  } else {
-    wg := t.getWaitGroup(jobGroup)
-    wg.Add(1)
+/* -------------------------------------------------------------------------- */
 
-    g := func(pool ThreadPool, erf func() error) error {
-      defer wg.Done()
-      return f(pool, erf)
-    }
-    select {
-    case t.channel <- job{g, jobGroup}:
-    default:
-      // channel buffer is full, execute job here
-      getError := func() error {
-        return t.getError(jobGroup)
-      }
-      if err := g(t, getError); err != nil {
-        t.setError(jobGroup, err)
-      }
-    }
-  }
-  return nil
-}
-
-func (t ThreadPool) AddRangeJob(iFrom, iTo int, jobGroup int, f func(i int, pool ThreadPool, erf func() error) error) error {
-  if iFrom >= iTo {
-    return nil
-  }
-  m := t.NumberOfThreads()
-  if m > iTo-iFrom {
-    m = iTo-iFrom
-  }
-  n := (iTo-iFrom)/m
-  for j := iFrom; j < iTo; j += n {
-    iFrom_ := j
-    iTo_   := j+n
-    if iTo_ > iTo {
-      iTo_ = iTo
-    }
-    if err := t.AddJob(jobGroup, func(pool ThreadPool, erf func() error) error {
-      for i := iFrom_; i < iTo_; i++ {
-        if err := f(i, pool, erf); err != nil {
-          return err
-        }
-      }
-      return nil
-    }); err != nil {
-      return err
-    }
-  }
-  return nil
-}
-
-func (t ThreadPool) RangeJob(iFrom, iTo int, f func(i int, pool ThreadPool, erf func() error) error) error {
-  g := t.NewJobGroup()
-  if err := t.AddRangeJob(iFrom, iTo, g, f); err != nil {
-    return err
-  }
-  if err := t.Wait(g); err != nil {
-    return err
-  }
-  return nil
-}
-
+// Wait until all jobs in [jobGroup] are done. The main thread is then used
+// as a worker to process jobs
 func (t ThreadPool) Wait(jobGroup int) error {
   if t.NumberOfThreads() == 1 {
     return nil
@@ -311,6 +249,100 @@ func (t ThreadPool) Wait(jobGroup int) error {
   err := t.getError(jobGroup)
   t.clear(jobGroup)
   return err
+}
+
+/* simple job queuing
+ * -------------------------------------------------------------------------- */
+
+// Submit a single job to the queue. If the pool consists
+// of only one thread then the job is processed immediately
+func (t ThreadPool) AddJob(jobGroup int, f func(pool ThreadPool, erf func() error) error) error {
+  if t.NumberOfThreads() == 1 {
+    getError := func() error {
+      return nil
+    }
+    if err := f(t, getError); err != nil {
+      return err
+    }
+  } else {
+    wg := t.getWaitGroup(jobGroup)
+    wg.Add(1)
+
+    g := func(pool ThreadPool, erf func() error) error {
+      defer wg.Done()
+      return f(pool, erf)
+    }
+    select {
+    case t.channel <- job{g, jobGroup}:
+    default:
+      // channel buffer is full, execute job here
+      getError := func() error {
+        return t.getError(jobGroup)
+      }
+      if err := g(t, getError); err != nil {
+        t.setError(jobGroup, err)
+      }
+    }
+  }
+  return nil
+}
+
+// Submit a range job to the queue. The range [iFrom,ito) is split into
+// chunks of equal size which are then queued independently
+func (t ThreadPool) AddRangeJob(iFrom, iTo int, jobGroup int, f func(i int, pool ThreadPool, erf func() error) error) error {
+  if iFrom >= iTo {
+    return nil
+  }
+  m := t.NumberOfThreads()
+  if m > iTo-iFrom {
+    m = iTo-iFrom
+  }
+  n := (iTo-iFrom)/m
+  for j := iFrom; j < iTo; j += n {
+    iFrom_ := j
+    iTo_   := j+n
+    if iTo_ > iTo {
+      iTo_ = iTo
+    }
+    if err := t.AddJob(jobGroup, func(pool ThreadPool, erf func() error) error {
+      for i := iFrom_; i < iTo_; i++ {
+        if err := f(i, pool, erf); err != nil {
+          return err
+        }
+      }
+      return nil
+    }); err != nil {
+      return err
+    }
+  }
+  return nil
+}
+
+/* single job queuing
+ * -------------------------------------------------------------------------- */
+
+// Submit a single job and wait until the job is done
+func (t ThreadPool) Job(f func(pool ThreadPool, erf func() error) error) error {
+  g := t.NewJobGroup()
+  if err := t.AddJob(g, f); err != nil {
+    return err
+  }
+  if err := t.Wait(g); err != nil {
+    return err
+  }
+  return nil
+}
+
+// Submit a range job and wait until the job is done
+func (t ThreadPool) RangeJob(iFrom, iTo int, f func(i int, pool ThreadPool, erf func() error) error) error {
+  g := t.NewJobGroup()
+  if err := t.AddRangeJob(iFrom, iTo, g, f); err != nil {
+    return err
+  }
+  if err := t.Wait(g); err != nil {
+    return err
+  }
+  return nil
 }
 
 /* -------------------------------------------------------------------------- */
