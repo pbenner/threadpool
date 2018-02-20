@@ -1,6 +1,46 @@
 ## ThreadPool
 
-Go / Golang thread-pool library that supports nested job queuing.
+Go / Golang thread-pool library that supports nested job queuing. The general programming pattern is described in the following schematic:
+
+```go
+  // create a new thread pool with 5 working threads and
+  // a queue buffer of 100 (in addition to this thread, 4
+  // more threads will be launched that start reading
+  // from the job queue)
+  pool := NewThreadPool(5, 100)
+
+  // allocate some memory for each thread
+  data := make([]Data, pool.NumberOfThreads())
+
+  // jobs are always grouped, get a new group index
+  g1 := pool.NewJobGroup()
+
+  // add a new job to group g1
+  pool.AddJob(g1, func(pool ThreadPool, erf func() error) error {
+    // check if there was an error in one of the other tasks
+    if erf() != nil {
+      return nil
+    }
+    // notice that this function receives as argument another
+    // ThreadPool structure, which hides the old pool variable
+    // in the surrounding scope and carries the thread id of
+    // the current process
+
+    // access global data in a thread-safe way
+    data := data[pool.GetThreadId()]
+
+    // do some work here...
+
+    // return nil if task is done
+    return nil
+  })
+  // add other tasks to g1...
+
+  // wait until all tasks are done
+  if err := pool.Wait(g1); err != nil {
+    // some task returned an error
+  }
+```
 
 ## Examples
 
