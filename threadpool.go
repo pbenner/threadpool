@@ -370,7 +370,11 @@ func (t ThreadPool) RangeJob(iFrom, iTo int, f func(i int, pool ThreadPool, erf 
 
 /* -------------------------------------------------------------------------- */
 
-func NewThreadPool(threads, bufsize int) ThreadPool {
+func Nil() ThreadPool {
+  return ThreadPool{}
+}
+
+func New(threads, bufsize int) ThreadPool {
   if threads < 1 {
     panic("invalid number of threads")
   }
