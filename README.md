@@ -7,7 +7,7 @@ Go / Golang thread-pool library that supports nested job queuing. The general pr
   // a queue buffer of 100 (in addition to this thread, 4
   // more threads will be launched that start reading
   // from the job queue)
-  pool := NewThreadPool(5, 100)
+  pool := threadpool.New(5, 100)
 
   // allocate some memory for each thread
   data := make([]ThreadData, pool.NumberOfThreads())
@@ -16,9 +16,9 @@ Go / Golang thread-pool library that supports nested job queuing. The general pr
   g1 := pool.NewJobGroup()
 
   // add a new job to group g1, if there is only one thread in the pool
-  // (i.e. if pool == ThreadPool{}), the main thread will process this
+  // (i.e. if pool == threadpool.ThreadPool{}), the main thread will process this
   // job immediately
-  if err := pool.AddJob(g1, func(pool ThreadPool, erf func() error) error {
+  if err := pool.AddJob(g1, func(pool threadpool.ThreadPool, erf func() error) error {
     // check if there was an error in one of the other tasks
     if erf() != nil {
       return nil
@@ -35,7 +35,7 @@ Go / Golang thread-pool library that supports nested job queuing. The general pr
 
     // a job may also add other jobs to the queue...
     g2 := pool.NewJobGroup()
-    if err := pool.AddJob(g2, func(pool ThreadPool, erf func() error) error {
+    if err := pool.AddJob(g2, func(pool threadpool.ThreadPool, erf func() error) error {
       // do some work here...
     }); err != nil {
       // some task returned an error
@@ -76,7 +76,7 @@ Any of the following functions can be used to add jobs to the queue:
   // a queue buffer of 100 (in addition to this thread, 4
   // more threads will be launched that start reading
   // from the job queue)
-  pool := NewThreadPool(5, 100)
+  pool := threadpool.New(5, 100)
 
   // jobs are always grouped, get a new group index
   g := pool.NewJobGroup()
@@ -87,7 +87,7 @@ Any of the following functions can be used to add jobs to the queue:
   // r[i] to the thread index
   for i_, _ := range r {
     i := i_
-    pool.AddJob(g, func(pool ThreadPool, erf func() error) error {
+    pool.AddJob(g, func(pool threadpool.ThreadPool, erf func() error) error {
       time.Sleep(10 * time.Millisecond)
       r[i] = pool.GetThreadId()+1
       return nil
@@ -101,7 +101,7 @@ Any of the following functions can be used to add jobs to the queue:
 
 ### Example 2: Distribute range equally among threads
 ```go
-  pool := NewThreadPool(5, 100)
+  pool := threadpool.New(5, 100)
 
   g := pool.NewJobGroup()
   r := make([]int, 20)
@@ -109,7 +109,7 @@ Any of the following functions can be used to add jobs to the queue:
   // instead of creating len(r) jobs, this method splits
   // r into #threads pieces and adds one job for each piece
   // to increase efficiency
-  pool.AddRangeJob(0, len(r), g, func(i int, pool ThreadPool, erf func() error) error {
+  pool.AddRangeJob(0, len(r), g, func(i int, pool threadpool.ThreadPool, erf func() error) error {
     time.Sleep(10 * time.Millisecond)
     r[i] = pool.GetThreadId()+1
     return nil
@@ -120,12 +120,12 @@ Any of the following functions can be used to add jobs to the queue:
 
 ### Example 3: Error handling
 ```go
-  pool := NewThreadPool(5, 100)
+  pool := threadpool.New(5, 100)
 
   g := pool.NewJobGroup()
   r := make([]int, 20)
 
-  if err := pool.AddRangeJob(0, len(r), g, func(i int, pool ThreadPool, erf func() error) error {
+  if err := pool.AddRangeJob(0, len(r), g, func(i int, pool threadpool.ThreadPool, erf func() error) error {
     time.Sleep(10 * time.Millisecond)
     // stop if there was an error in one of the
     // previous jobs
@@ -151,12 +151,12 @@ Any of the following functions can be used to add jobs to the queue:
 
 ### Example 4: Nested job queuing
 ```go
-  pool := NewThreadPool(5, 100)
+  pool := threadpool.New(5, 100)
 
   g0 := pool.NewJobGroup()
   r  := make([][]int, 5)
 
-  pool.AddRangeJob(0, len(r), g0, func(i int, pool ThreadPool, erf func() error) error {
+  pool.AddRangeJob(0, len(r), g0, func(i int, pool threadpool.ThreadPool, erf func() error) error {
     r[i] = make([]int, 5)
 
     // get a new job group for filling the i'th sub-slice, which allows
@@ -165,7 +165,7 @@ Any of the following functions can be used to add jobs to the queue:
 
     for j_, _ := range r[i] {
       j := j_
-      pool.AddJob(gi, func(pool ThreadPool, erf func() error) error {
+      pool.AddJob(gi, func(pool threadpool.ThreadPool, erf func() error) error {
         time.Sleep(10 * time.Millisecond)
         r[i][j] = pool.GetThreadId()+1
         return nil
