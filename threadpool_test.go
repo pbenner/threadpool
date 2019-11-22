@@ -27,7 +27,7 @@ import "time"
 func TestTest1(t *testing.T) {
 
   n := 10
-  p := NewThreadPool(n, 100)
+  p := New(n, 100)
   r := make([]int, n)
 
   // add jobs
@@ -55,7 +55,7 @@ func TestTest1(t *testing.T) {
 func TestTest2(t *testing.T) {
 
   n := 10
-  p := NewThreadPool(n, 100)
+  p := New(n, 100)
   r := make([]int, n)
 
   jobGroup := 0
@@ -82,7 +82,7 @@ func TestTest2(t *testing.T) {
 func TestTest3(t *testing.T) {
 
   n := 1
-  p := NewThreadPool(n, 100)
+  p := New(n, 100)
   r := make([]int, n)
 
   // add jobs
@@ -110,7 +110,7 @@ func TestTest4(t *testing.T) {
 
   n := 10
   m := 5
-  p := NewThreadPool(n, 100)
+  p := New(n, 100)
   r := make([]int, m)
 
   // add jobs
@@ -138,7 +138,7 @@ func TestTest5(t *testing.T) {
 
   n := 1
   m := 5
-  p := NewThreadPool(n, 100)
+  p := New(n, 100)
   r := make([]int, m)
 
   // add jobs
@@ -158,7 +158,7 @@ func TestTest5(t *testing.T) {
     })
   }
   if err := p.Wait(0); err != nil {
-    t.Error("test failed: %v", err)
+    t.Errorf("test failed: %v", err)
   }
 }
 
@@ -170,7 +170,7 @@ func TestExample1(t *testing.T) {
   // a queue buffer of 100 (in addition to this thread, 4
   // more threads will be launched that start reading
   // from the job queue)
-  pool := NewThreadPool(5, 100)
+  pool := New(5, 100)
 
   // jobs are always grouped, get a new group index
   g := pool.NewJobGroup()
@@ -196,7 +196,7 @@ func TestExample1(t *testing.T) {
 // Demonstrate AddRangeJob
 func TestExample2(t *testing.T) {
 
-  pool := NewThreadPool(5, 100)
+  pool := New(5, 100)
 
   g := pool.NewJobGroup()
   r := make([]int, 20)
@@ -216,7 +216,7 @@ func TestExample2(t *testing.T) {
 // Demonstrate error handling
 func TestExample3(t *testing.T) {
 
-  pool := NewThreadPool(5, 100)
+  pool := New(5, 100)
 
   g := pool.NewJobGroup()
   r := make([]int, 20)
@@ -248,7 +248,7 @@ func TestExample3(t *testing.T) {
 // Demonstrate nested job scheduling
 func TestExample4(t *testing.T) {
 
-  pool := NewThreadPool(5, 100)
+  pool := New(5, 100)
 
   g0 := pool.NewJobGroup()
   r  := make([][]int, 5)

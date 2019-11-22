@@ -341,6 +341,33 @@ func (t ThreadPool) AddRangeJob(iFrom, iTo int, jobGroup int, f func(i int, pool
   return nil
 }
 
+func (t ThreadPool) AddRangeJob_(iFrom, iTo int, jobGroup int, f func(ifrom, ito int, pool ThreadPool, erf func() error) error) error {
+  if iFrom >= iTo {
+    return nil
+  }
+  m := t.NumberOfThreads()
+  if m > iTo-iFrom {
+    m = iTo-iFrom
+  }
+  n := (iTo-iFrom)/m
+  for j := iFrom; j < iTo; j += n {
+    iFrom_ := j
+    iTo_   := j+n
+    if iTo_ > iTo {
+      iTo_ = iTo
+    }
+    if err := t.AddJob(jobGroup, func(pool ThreadPool, erf func() error) error {
+      if err := f(iFrom_, iTo_, pool, erf); err != nil {
+        return err
+      }
+      return nil
+    }); err != nil {
+      return err
+    }
+  }
+  return nil
+}
+
 /* single job queuing
  * -------------------------------------------------------------------------- */
 
@@ -360,6 +387,17 @@ func (t ThreadPool) Job(f func(pool ThreadPool, erf func() error) error) error {
 func (t ThreadPool) RangeJob(iFrom, iTo int, f func(i int, pool ThreadPool, erf func() error) error) error {
   g := t.NewJobGroup()
   if err := t.AddRangeJob(iFrom, iTo, g, f); err != nil {
+    return err
+  }
+  if err := t.Wait(g); err != nil {
+    return err
+  }
+  return nil
+}
+
+func (t ThreadPool) RangeJob_(iFrom, iTo int, f func(ifrom, ito int, pool ThreadPool, erf func() error) error) error {
+  g := t.NewJobGroup()
+  if err := t.AddRangeJob_(iFrom, iTo, g, f); err != nil {
     return err
   }
   if err := t.Wait(g); err != nil {
